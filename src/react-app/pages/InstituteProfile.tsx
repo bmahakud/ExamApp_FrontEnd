@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router';
 import {
   Building2, Mail, Phone, Globe, MapPin, Users, Settings,
   Edit2, Save, X, CheckCircle, AlertCircle, Clock, Shield,
-  Calendar, FileText, Activity, TrendingUp, Award, UserCheck
+  Calendar, FileText, Activity, TrendingUp, Award, UserCheck, Power
 } from 'lucide-react';
 import { api, extractApiError } from '../hooks/useApi';
 import { useAuthContext } from '../contexts/AuthContext';
@@ -90,6 +90,7 @@ export default function InstituteProfile() {
 
   const [subdomainInput, setSubdomainInput] = useState('');
   const [subdomainError, setSubdomainError] = useState<string | null>(null);
+  const [statusToggleLoading, setStatusToggleLoading] = useState(false);
 
   const [settingsFormData, setSettingsFormData] = useState({
     allow_student_registration: true,
@@ -282,6 +283,26 @@ export default function InstituteProfile() {
       setError(err.response?.data?.detail || 'Failed to save institute details');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleToggleInstituteStatus = async () => {
+    if (!institute) return;
+    const targetStatus = !institute.is_active;
+    try {
+      setStatusToggleLoading(true);
+      const res = await api.patch(`/auth/platform/institutes/${institute.id}/`, {
+        is_active: targetStatus
+      });
+      const updatedActive = res.data?.is_active ?? targetStatus;
+      setInstitute(prev => prev ? { ...prev, is_active: updatedActive } : null);
+      setSuccess(`Institute successfully marked as ${updatedActive ? 'Online' : 'Paused'}`);
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err: any) {
+      console.error('Failed to toggle institute status:', err);
+      setError(extractApiError(err).detail || `Failed to mark institute as ${targetStatus ? 'Online' : 'Paused'}`);
+    } finally {
+      setStatusToggleLoading(false);
     }
   };
 
@@ -705,6 +726,46 @@ export default function InstituteProfile() {
               <h3 className="text-base font-semibold text-gray-900 dark:text-white mb-4">Institute Settings</h3>
 
               <div className="space-y-4">
+                {isPlatformStaff && institute && (
+                  <div className="flex items-center justify-between py-3 border-b border-slate-200 dark:border-gray-700 bg-slate-50 dark:bg-gray-700/50 p-3 rounded-lg mb-4">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white">Operating Status</p>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                          institute.is_active
+                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300'
+                            : 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300'
+                        }`}>
+                          {institute.is_active ? 'Online' : 'Paused'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 dark:text-gray-400">
+                        {institute.is_active
+                          ? 'Institute is operational. Students and faculty can access exams and portals.'
+                          : 'Institute is currently paused. Portals and examinations are suspended.'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleToggleInstituteStatus}
+                      disabled={statusToggleLoading}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
+                        institute.is_active
+                          ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      }`}
+                    >
+                      {statusToggleLoading ? (
+                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      ) : (
+                        <>
+                          <Power className="w-3.5 h-3.5" />
+                          {institute.is_active ? 'Mark as Paused' : 'Mark as Online'}
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
                 {/* Student Registration */}
                 <div className="flex items-center justify-between py-3 border-b border-slate-200 dark:border-gray-700">
                   <div>
