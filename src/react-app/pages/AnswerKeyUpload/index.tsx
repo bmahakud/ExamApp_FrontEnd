@@ -30,10 +30,12 @@ interface AnswerKeyJob {
 interface AnswerKeyRow {
     id: number;
     question_number: number;
+    subject?: string;
     extracted_answer: string;
     current_answer: string;
     match_status: 'matched' | 'unmatched';
     matched_question_id: number | null;
+    review_flags?: string[];
     skip: boolean;
     is_applied: boolean;
     apply_error: string;
@@ -575,7 +577,12 @@ function ReviewRow({ row, saving, justSaved, onPatch }: ReviewRowProps) {
 
     return (
         <tr className={`${isUnmatched ? 'bg-amber-50/40' : ''} ${row.skip ? 'opacity-50' : ''}`}>
-            <td className="px-4 py-3 font-mono font-semibold text-slate-700">{row.question_number}</td>
+            <td className="px-4 py-3 font-mono font-semibold text-slate-700">
+                <div>Q{row.question_number}</div>
+                {row.subject && (
+                    <div className="text-[11px] font-sans font-normal text-slate-400">{row.subject}</div>
+                )}
+            </td>
             <td className="px-4 py-3 text-slate-600">
                 {row.current_answer ? (
                     <span className="line-clamp-2">{row.current_answer}</span>
@@ -604,15 +611,22 @@ function ReviewRow({ row, saving, justSaved, onPatch }: ReviewRowProps) {
                 </div>
             </td>
             <td className="px-4 py-3">
-                {isUnmatched ? (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800">
-                        <AlertTriangle className="h-3 w-3" /> Unmatched
-                    </span>
-                ) : (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-800">
-                        <CheckCircle className="h-3 w-3" /> Matched
-                    </span>
-                )}
+                <div className="flex flex-col gap-1 items-start">
+                    {isUnmatched ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800">
+                            <AlertTriangle className="h-3 w-3" /> Unmatched
+                        </span>
+                    ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-800">
+                            <CheckCircle className="h-3 w-3" /> Matched
+                        </span>
+                    )}
+                    {row.review_flags?.map((flag, idx) => (
+                        <span key={idx} className="text-[10px] text-amber-700 bg-amber-50 rounded px-1.5 py-0.5 border border-amber-200">
+                            {flag}
+                        </span>
+                    ))}
+                </div>
             </td>
             <td className="px-4 py-3 text-center">
                 <label className="inline-flex items-center cursor-pointer">

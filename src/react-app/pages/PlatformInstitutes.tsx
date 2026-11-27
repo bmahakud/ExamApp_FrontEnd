@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Building2, Users, Plus, Search, Shield, Globe,
     CheckCircle, XCircle, MoreVertical, Activity,
-    ShieldCheck, MapPin, Calendar, ExternalLink, Settings
+    ShieldCheck, MapPin, Calendar, ExternalLink, Settings, Power
 } from 'lucide-react';
 import { api, extractApiError } from '../hooks/useApi';
 import { normalizeSubdomain, validateSubdomain, portalHost } from '../utils/subdomain';
@@ -57,6 +57,7 @@ export default function PlatformInstitutes() {
     const [editedSubdomain, setEditedSubdomain] = useState('');
     const [updateLoading, setUpdateLoading] = useState(false);
     const [subdomainEditError, setSubdomainEditError] = useState<string | null>(null);
+    const [statusLoading, setStatusLoading] = useState(false);
 
     const createSubdomainError = validateSubdomain(normalizeSubdomain(formData.subdomain));
 
@@ -125,6 +126,30 @@ export default function PlatformInstitutes() {
             setSubdomainEditError(apiFieldError(err, 'subdomain', 'Failed to update subdomain.'));
         } finally {
             setUpdateLoading(false);
+        }
+    };
+
+    const handleToggleInstituteStatus = async (instToUpdate?: Institute) => {
+        const target = instToUpdate || selectedInstitute;
+        if (!target) return;
+        const targetNewStatus = !target.is_active;
+        setStatusLoading(true);
+        try {
+            const response = await api.patch(`/auth/platform/institutes/${target.id}/`, {
+                is_active: targetNewStatus
+            });
+            const updatedActive: boolean = response.data?.is_active ?? targetNewStatus;
+            setInstitutes(prev => prev.map(inst =>
+                inst.id === target.id ? { ...inst, is_active: updatedActive } : inst
+            ));
+            if (selectedInstitute && selectedInstitute.id === target.id) {
+                setSelectedInstitute(prev => prev ? { ...prev, is_active: updatedActive } : null);
+            }
+        } catch (err) {
+            console.error('Failed to update institute status', err);
+            alert(apiFieldError(err, 'is_active', `Failed to mark institute as ${targetNewStatus ? 'Online' : 'Paused'}`));
+        } finally {
+            setStatusLoading(false);
         }
     };
 
@@ -532,6 +557,11 @@ export default function PlatformInstitutes() {
                                             <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${selectedInstitute.is_verified ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'}`}>
                                                 {selectedInstitute.is_verified ? 'Verified' : 'Pending'}
                                             </span>
+                                            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest ${
+                                                selectedInstitute.is_active ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-slate-100 text-slate-600 border border-slate-200'
+                                            }`}>
+                                                {selectedInstitute.is_active ? 'Online' : 'Paused'}
+                                            </span>
                                         </div>
                                         {selectedInstitute.subdomain ? (
                                             <div className="flex flex-col gap-1 mt-1">
@@ -603,6 +633,57 @@ export default function PlatformInstitutes() {
                                                 <button className="mt-3 text-xs font-black text-amber-600 underline">Assign Root Now</button>
                                             </div>
                                         )}
+
+                                        {/* Institute Settings */}
+                                        <div className="space-y-4 pt-4 border-t border-slate-100">
+                                            <h3 className="text-xs font-black text-indigo-600 uppercase tracking-[0.2em] flex items-center gap-2">
+                                                <Settings className="w-4 h-4" /> Institute Settings
+                                            </h3>
+                                            <div className="bg-slate-50 border border-slate-100 rounded-3xl p-6 space-y-4">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Operating Status</p>
+                                                        <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider ${
+                                                            selectedInstitute.is_active
+                                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                                                : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                                        }`}>
+                                                            <div className={`w-2 h-2 rounded-full ${
+                                                                selectedInstitute.is_active
+                                                                    ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'
+                                                                    : 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]'
+                                                            }`} />
+                                                            {selectedInstitute.is_active ? 'Online' : 'Paused'}
+                                                        </span>
+                                                    </div>
+
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleToggleInstituteStatus(selectedInstitute)}
+                                                        disabled={statusLoading}
+                                                        className={`px-4 py-2.5 rounded-2xl font-bold text-xs flex items-center gap-2 transition-all shadow-md active:scale-95 ${
+                                                            selectedInstitute.is_active
+                                                                ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20'
+                                                                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                                                        }`}
+                                                    >
+                                                        {statusLoading ? (
+                                                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                                        ) : (
+                                                            <>
+                                                                <Power className="w-3.5 h-3.5" />
+                                                                {selectedInstitute.is_active ? 'Mark as Paused' : 'Mark as Online'}
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                </div>
+                                                <p className="text-xs text-slate-500 font-medium">
+                                                    {selectedInstitute.is_active
+                                                        ? 'Institute is operational. Students and faculty have full access to exams and portals.'
+                                                        : 'Institute is currently paused. Student access, timetables, and exam activities are suspended.'}
+                                                </p>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     {/* Right: Ecosystem Stats */}
