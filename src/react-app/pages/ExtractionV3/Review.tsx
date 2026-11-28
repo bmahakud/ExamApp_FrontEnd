@@ -9,6 +9,8 @@ import {
     X, BookOpen
 } from 'lucide-react';
 import { api } from '@/react-app/hooks/useApi';
+import LaTeXRenderer from '@/react-app/components/LaTeXRenderer';
+import PatternLimitConfirmModal from '@/react-app/components/extraction/PatternLimitConfirmModal';
 
 interface ExtractedQuestion {
     id: number;
@@ -46,6 +48,10 @@ export default function ExtractionReviewPage() {
     const [questions, setQuestions] = useState<ExtractedQuestion[]>([]);
     const [loading, setLoading] = useState(true);
     const [importing, setImporting] = useState(false);
+    const [replaceConfirm, setReplaceConfirm] = useState<{ open: boolean; message: string }>({
+        open: false,
+        message: '',
+    });
     const [filter, setFilter] = useState<'all' | 'review' | 'imported'>('all');
 
     const [selectedQuestion, setSelectedQuestion] = useState<ExtractedQuestion | null>(null);
@@ -72,7 +78,7 @@ export default function ExtractionReviewPage() {
         fetchData();
     }, [jobId]);
 
-    const handleImport = async () => {
+    const handleImport = async (replaceExisting = false) => {
         if (!job || !questions.length) return;
 
         setImporting(true);
@@ -88,12 +94,24 @@ export default function ExtractionReviewPage() {
             await api.post('/questions/bulk-import-extracted/', {
                 job_id: job.id,
                 question_ids: questions.map(q => q.id),
-                mappings
+                mappings,
+                ...(replaceExisting ? { replace_existing: true } : {}),
             });
 
+            setReplaceConfirm({ open: false, message: '' });
+            toast.success('Questions imported successfully!');
             // Success! Navigate to exam view or question list
             navigate(`/exams/${examId}`);
-        } catch (err) {
+        } catch (err: any) {
+            const resData = err?.response?.data;
+            if (err?.response?.status === 409 && resData?.code === 'pattern_range_exceeded') {
+                const msg =
+                    resData.incoming_count != null && resData.pattern_limit != null && resData.existing_count != null
+                        ? `Adding ${resData.incoming_count} questions exceeds the pattern limit of ${resData.pattern_limit} (${resData.existing_count} already exist). Previously existing questions will be permanently deleted and replaced with the new ones. Do you want to proceed?`
+                        : resData.message || 'Adding these questions exceeds the exam pattern limit. Previously existing questions will be permanently deleted and replaced with the new ones. Do you want to proceed?';
+                setReplaceConfirm({ open: true, message: msg });
+                return;
+            }
             console.error("Import failed", err);
             toast.error("Failed to import questions. Please check if the pattern capacity is full.");
         } finally {
@@ -194,7 +212,7 @@ export default function ExtractionReviewPage() {
                         </div>
 
                         <button
-                            onClick={handleImport}
+                            onClick={() => handleImport(false)}
                             disabled={importing || questions.length === 0}
                             className="flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 font-bold text-white transition-all hover:bg-blue-700 shadow-md shadow-blue-500/20 disabled:opacity-50 disabled:grayscale"
                         >
@@ -259,10 +277,9 @@ export default function ExtractionReviewPage() {
                                                 </div>
                                             )}
                                         </div>
-                                        <div
-                                            className="text-slate-800 line-clamp-3 leading-relaxed"
-                                            dangerouslySetInnerHTML={{ __html: q.question_text }}
-                                        />
+                                        <div className="text-slate-800 line-clamp-3 leading-relaxed">
+                                            <LaTeXRenderer content={q.question_text} inline />
+                                        </div>
                                     </div>
                                 </div>
                             </motion.div>
@@ -313,10 +330,9 @@ export default function ExtractionReviewPage() {
                                 {/* Body */}
                                 <div>
                                     <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-slate-400 mb-4">Question Text</h4>
-                                    <div
-                                        className="text-xl text-slate-900 leading-relaxed font-serif p-6 rounded-3xl bg-slate-50/50 border border-slate-100 min-h-[100px]"
-                                        dangerouslySetInnerHTML={{ __html: selectedQuestion.question_text }}
-                                    />
+                                    <div className="text-xl text-slate-900 leading-relaxed font-serif p-6 rounded-3xl bg-slate-50/50 border border-slate-100 min-h-[100px]">
+                                        <LaTeXRenderer content={selectedQuestion.question_text} />
+                                    </div>
                                 </div>
 
                                 {/* Options */}
@@ -339,7 +355,9 @@ export default function ExtractionReviewPage() {
                                                             }`}>
                                                             {letter}
                                                         </div>
-                                                        <div className="flex-1 pt-1 text-slate-700" dangerouslySetInnerHTML={{ __html: opt }} />
+                                                        <div className="flex-1 pt-1 text-slate-700 min-w-0">
+                                                            <LaTeXRenderer content={opt} />
+                                                        </div>
                                                         {isCorrect && (
                                                             <div className="bg-green-100 text-green-700 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-tighter">Correct</div>
                                                         )}
@@ -366,7 +384,9 @@ export default function ExtractionReviewPage() {
                                         <h4 className="text-xs font-bold uppercase tracking-[0.2em] text-blue-600 mb-3 flex items-center gap-2">
                                             <Beaker className="h-4 w-4" /> Solution
                                         </h4>
-                                        <div className="text-slate-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: selectedQuestion.solution }} />
+                                        <div className="text-slate-700 leading-relaxed">
+                                            <LaTeXRenderer content={selectedQuestion.solution} />
+                                        </div>
                                     </div>
                                 )}
 
@@ -498,6 +518,14 @@ export default function ExtractionReviewPage() {
                     </div>
                 )}
             </AnimatePresence>
+
+            <PatternLimitConfirmModal
+                isOpen={replaceConfirm.open}
+                message={replaceConfirm.message}
+                confirming={importing}
+                onCancel={() => setReplaceConfirm({ open: false, message: '' })}
+                onProceed={() => handleImport(true)}
+            />
         </div>
     );
 }

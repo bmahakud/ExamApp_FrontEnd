@@ -40,6 +40,7 @@ import { getPublicExamLink, normalizeShareUrl } from '../utils/urlUtils';
 import QuestionBulkImport from '../components/extraction/QuestionBulkImport';
 import OMRManagement from '../components/OMRManagement';
 import AnswerSheetUpload from '../components/AnswerSheetUpload';
+import ExamBulkCleanupModal from '../components/ExamBulkCleanupModal';
 
 const slugifySubject = (subject: string) =>
   subject
@@ -127,6 +128,7 @@ export default function ExamView() {
   const [generatingOMR, setGeneratingOMR] = useState(false);
   const [sectionToDelete, setSectionToDelete] = useState<PatternSection | null>(null);
   const [deletingSection, setDeletingSection] = useState(false);
+  const [showBulkCleanupModal, setShowBulkCleanupModal] = useState(false);
 
   useEffect(() => {
     if (examId) {
@@ -700,14 +702,14 @@ export default function ExamView() {
           <div className="grid grid-cols-12 gap-4">
             {/* Sections Table */}
             <section className="col-span-12 lg:col-span-8 bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
-              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 bg-slate-50">
-                <div>
-                  <h2 className="text-base font-semibold text-slate-900">{exam.pattern.name}</h2>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 px-3 py-2.5 border-b border-slate-200 bg-slate-50">
+                <div className="min-w-0">
+                  <h2 className="text-base font-semibold text-slate-900 truncate">{exam.pattern.name}</h2>
                   <p className="text-xs text-slate-500">
                     {totalQuestionsAdded} of {exam.total_questions} questions added · {overallProgress.toFixed(0)}% complete
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
                   {/* AI Bulk Import button hidden - use Smart Extract V3 instead */}
                   <button
                     onClick={() => navigate(`/exams/${exam.id}/extraction-v3`)}
@@ -732,6 +734,15 @@ export default function ExamView() {
                     <ExternalLink className="w-3 h-3" />
                     Pattern
                   </Link>
+                  <button
+                    type="button"
+                    onClick={() => setShowBulkCleanupModal(true)}
+                    className="inline-flex items-center justify-center p-1.5 sm:px-2.5 sm:py-1.5 text-xs font-medium rounded-md bg-white border border-red-200 text-red-600 hover:bg-red-50 hover:border-red-300 transition-colors shadow-sm"
+                    title="Delete bulk or specific questions / answers"
+                    aria-label="Delete bulk or specific questions or answers"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
               <div className="max-h-[360px] overflow-auto">
@@ -1186,6 +1197,14 @@ export default function ExamView() {
           </div>
         )
       }
+      <ExamBulkCleanupModal
+        isOpen={showBulkCleanupModal}
+        onClose={() => setShowBulkCleanupModal(false)}
+        examId={exam.id}
+        examTitle={exam.title}
+        totalQuestionsAdded={totalQuestionsAdded}
+        onCompleted={fetchExam}
+      />
     </div >
   );
 }
