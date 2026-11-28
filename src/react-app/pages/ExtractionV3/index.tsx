@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { api, getErrorMessage } from '@/react-app/hooks/useApi';
+import LaTeXRenderer from '@/react-app/components/LaTeXRenderer';
+import PatternLimitConfirmModal from '@/react-app/components/extraction/PatternLimitConfirmModal';
 
 // Types for Review
 interface ExtractedQuestion {
@@ -49,6 +51,10 @@ export default function ExtractionV3Page() {
     const [selectedQuestion, setSelectedQuestion] = useState<ExtractedQuestion | null>(null);
     const [editingQuestion, setEditingQuestion] = useState<ExtractedQuestion | null>(null);
     const [importing, setImporting] = useState(false);
+    const [replaceConfirm, setReplaceConfirm] = useState<{ open: boolean; message: string }>({
+        open: false,
+        message: '',
+    });
     const [filter, setFilter] = useState<'all' | 'review'>('all');
 
     // Pipeline Progress
@@ -188,7 +194,7 @@ export default function ExtractionV3Page() {
     };
 
     // Import (Same as before)
-    const handleImport = async () => {
+    const handleImport = async (replaceExisting = false) => {
         if (!jobId || !questions.length) return;
         setImporting(true);
         try {
@@ -202,12 +208,23 @@ export default function ExtractionV3Page() {
             await api.post('/questions/bulk-import-extracted/', {
                 job_id: jobId,
                 question_ids: questions.map(q => q.id),
-                mappings
+                mappings,
+                ...(replaceExisting ? { replace_existing: true } : {}),
             });
 
+            setReplaceConfirm({ open: false, message: '' });
             toast.success('Questions imported successfully!');
             navigate(`/exams/${examId}`);
         } catch (err: any) {
+            const resData = err?.response?.data;
+            if (err?.response?.status === 409 && resData?.code === 'pattern_range_exceeded') {
+                const msg =
+                    resData.incoming_count != null && resData.pattern_limit != null && resData.existing_count != null
+                        ? `Adding ${resData.incoming_count} questions exceeds the pattern limit of ${resData.pattern_limit} (${resData.existing_count} already exist). Previously existing questions will be permanently deleted and replaced with the new ones. Do you want to proceed?`
+                        : resData.message || 'Adding these questions exceeds the exam pattern limit. Previously existing questions will be permanently deleted and replaced with the new ones. Do you want to proceed?';
+                setReplaceConfirm({ open: true, message: msg });
+                return;
+            }
             console.error("Import failed:", err);
             toast.error(`Failed to import: ${getErrorMessage(err, 'Import failed')}`);
         } finally {
@@ -238,6 +255,13 @@ export default function ExtractionV3Page() {
         return (
             <div className="flex h-screen w-full items-center justify-center bg-slate-50">
                 <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+                <PatternLimitConfirmModal
+                    isOpen={replaceConfirm.open}
+                    message={replaceConfirm.message}
+                    confirming={importing}
+                    onCancel={() => setReplaceConfirm({ open: false, message: '' })}
+                    onProceed={() => handleImport(true)}
+                />
             </div>
         );
     }
@@ -266,6 +290,13 @@ export default function ExtractionV3Page() {
                         {error && <p className="mt-4 text-center text-red-600 font-medium">{error}</p>}
                     </motion.div>
                 </main>
+                <PatternLimitConfirmModal
+                    isOpen={replaceConfirm.open}
+                    message={replaceConfirm.message}
+                    confirming={importing}
+                    onCancel={() => setReplaceConfirm({ open: false, message: '' })}
+                    onProceed={() => handleImport(true)}
+                />
             </div>
         );
     }
@@ -308,6 +339,13 @@ export default function ExtractionV3Page() {
                         </button>
                     </div>
                 </div>
+                <PatternLimitConfirmModal
+                    isOpen={replaceConfirm.open}
+                    message={replaceConfirm.message}
+                    confirming={importing}
+                    onCancel={() => setReplaceConfirm({ open: false, message: '' })}
+                    onProceed={() => handleImport(true)}
+                />
             </div>
         );
     }
@@ -336,6 +374,13 @@ export default function ExtractionV3Page() {
                         transition={{ duration: 0.5 }}
                     />
                 </div>
+                <PatternLimitConfirmModal
+                    isOpen={replaceConfirm.open}
+                    message={replaceConfirm.message}
+                    confirming={importing}
+                    onCancel={() => setReplaceConfirm({ open: false, message: '' })}
+                    onProceed={() => handleImport(true)}
+                />
             </div>
         );
     }
@@ -361,7 +406,7 @@ export default function ExtractionV3Page() {
                             <button onClick={() => setFilter('all')} className={`px-4 py-1.5 text-xs font-bold rounded-md ${filter === 'all' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>All</button>
                             <button onClick={() => setFilter('review')} className={`px-4 py-1.5 text-xs font-bold rounded-md ${filter === 'review' ? 'bg-white shadow-sm text-amber-600' : 'text-slate-50'}`}>Review ({questions.filter(q => q.requires_review).length})</button>
                         </div>
-                        <button onClick={handleImport} disabled={importing} className="flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 font-bold text-white shadow-lg shadow-blue-600/20">
+                        <button onClick={() => handleImport(false)} disabled={importing} className="flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-2.5 font-bold text-white shadow-lg shadow-blue-600/20">
                             {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                             Finalize & Import
                         </button>
@@ -386,7 +431,9 @@ export default function ExtractionV3Page() {
                                                 <span className="text-[9px] font-bold uppercase bg-slate-100 px-1.5 py-0.5 rounded">{q.suggested_subject || 'N/A'}</span>
                                                 <span className="text-[9px] font-bold uppercase bg-slate-100 px-1.5 py-0.5 rounded">{q.question_type?.replace('_', ' ') || 'N/A'}</span>
                                             </div>
-                                            <div className="text-sm text-slate-800 line-clamp-2" dangerouslySetInnerHTML={{ __html: q.question_text || 'No question text' }} />
+                                            <div className="text-sm text-slate-800 line-clamp-2">
+                                                <LaTeXRenderer content={q.question_text || 'No question text'} inline />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -405,14 +452,22 @@ export default function ExtractionV3Page() {
                                     </div>
                                 </div>
                                 <div className="space-y-8">
-                                    <div dangerouslySetInnerHTML={{ __html: selectedQuestion.question_text }} className="text-xl font-serif leading-relaxed p-6 bg-slate-50/50 rounded-3xl" />
+                                    <div className="text-xl font-serif leading-relaxed p-6 bg-slate-50/50 rounded-3xl border border-slate-100">
+                                        <LaTeXRenderer content={selectedQuestion.question_text} />
+                                    </div>
                                     {selectedQuestion.options?.map((opt, i) => (
                                         <div key={i} className={`p-4 rounded-2xl border flex gap-4 ${selectedQuestion.correct_answer === String.fromCharCode(65 + i) ? 'bg-green-50 border-green-200' : 'bg-white'}`}>
                                             <span className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center font-bold text-sm">{String.fromCharCode(65 + i)}</span>
-                                            <div className="pt-1" dangerouslySetInnerHTML={{ __html: opt }} />
+                                            <div className="pt-1 flex-1 min-w-0">
+                                                <LaTeXRenderer content={opt} />
+                                            </div>
                                         </div>
                                     ))}
-                                    {selectedQuestion.solution && <div className="p-6 bg-blue-50/50 rounded-3xl border border-blue-100" dangerouslySetInnerHTML={{ __html: selectedQuestion.solution }} />}
+                                    {selectedQuestion.solution && (
+                                        <div className="p-6 bg-blue-50/50 rounded-3xl border border-blue-100">
+                                            <LaTeXRenderer content={selectedQuestion.solution} />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ) : (
@@ -446,6 +501,13 @@ export default function ExtractionV3Page() {
                         </div>
                     </div>
                 )}
+                <PatternLimitConfirmModal
+                    isOpen={replaceConfirm.open}
+                    message={replaceConfirm.message}
+                    confirming={importing}
+                    onCancel={() => setReplaceConfirm({ open: false, message: '' })}
+                    onProceed={() => handleImport(true)}
+                />
             </div>
         );
     }

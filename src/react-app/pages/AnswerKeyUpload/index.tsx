@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useDropzone } from 'react-dropzone';
 import { api, getErrorMessage } from '@/react-app/hooks/useApi';
+import LaTeXRenderer from '@/react-app/components/LaTeXRenderer';
 
 type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
@@ -403,8 +404,8 @@ export default function AnswerKeyUploadPage() {
                                 <thead className="bg-slate-50 text-slate-500 uppercase text-[11px] tracking-wide">
                                     <tr>
                                         <th className="px-4 py-3 text-left font-semibold w-16">Q#</th>
-                                        <th className="px-4 py-3 text-left font-semibold">Current answer</th>
-                                        <th className="px-4 py-3 text-left font-semibold w-64">Extracted answer</th>
+                                        <th className="px-4 py-3 text-left font-semibold w-72">Current answer</th>
+                                        <th className="px-4 py-3 text-left font-semibold">Extracted answer</th>
                                         <th className="px-4 py-3 text-left font-semibold w-32">Status</th>
                                         <th className="px-4 py-3 text-center font-semibold w-24">Skip</th>
                                     </tr>
@@ -560,6 +561,7 @@ interface ReviewRowProps {
 
 function ReviewRow({ row, saving, justSaved, onPatch }: ReviewRowProps) {
     const [draft, setDraft] = useState(row.extracted_answer);
+    const [isFocused, setIsFocused] = useState(false);
     const initialRef = useRef(row.extracted_answer);
 
     useEffect(() => {
@@ -568,12 +570,14 @@ function ReviewRow({ row, saving, justSaved, onPatch }: ReviewRowProps) {
     }, [row.extracted_answer]);
 
     const commit = () => {
+        setIsFocused(false);
         const trimmed = draft.trim();
         if (trimmed === initialRef.current) return;
         onPatch({ extracted_answer: trimmed });
     };
 
     const isUnmatched = row.match_status === 'unmatched';
+    const hasMath = (val: string) => /\$|\\/.test(val || '');
 
     return (
         <tr className={`${isUnmatched ? 'bg-amber-50/40' : ''} ${row.skip ? 'opacity-50' : ''}`}>
@@ -585,29 +589,42 @@ function ReviewRow({ row, saving, justSaved, onPatch }: ReviewRowProps) {
             </td>
             <td className="px-4 py-3 text-slate-600">
                 {row.current_answer ? (
-                    <span className="line-clamp-2">{row.current_answer}</span>
+                    <div className="line-clamp-3">
+                        <LaTeXRenderer content={row.current_answer} inline />
+                    </div>
                 ) : (
                     <span className="text-slate-400 italic">empty</span>
                 )}
             </td>
             <td className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                    <input
-                        type="text"
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        onBlur={commit}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                                (e.target as HTMLInputElement).blur();
-                            }
-                        }}
-                        placeholder='e.g. "A" or "A, C"'
-                        disabled={row.skip || row.is_applied}
-                        className="flex-1 px-3 py-1.5 text-sm rounded-md border border-slate-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none disabled:bg-slate-50 disabled:text-slate-400"
-                    />
-                    {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
-                    {justSaved && !saving && <CheckCircle className="h-3.5 w-3.5 text-green-500" />}
+                <div className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="text"
+                            value={draft}
+                            onChange={(e) => setDraft(e.target.value)}
+                            onFocus={() => setIsFocused(true)}
+                            onBlur={commit}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                    (e.target as HTMLInputElement).blur();
+                                }
+                            }}
+                            placeholder='e.g. "A" or "$80 \mu \mathrm{C}$"'
+                            disabled={row.skip || row.is_applied}
+                            className="flex-1 px-3 py-1.5 text-sm font-mono rounded-md border border-slate-200 focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200 outline-none disabled:bg-slate-50 disabled:text-slate-400"
+                        />
+                        {saving && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+                        {justSaved && !saving && <CheckCircle className="h-3.5 w-3.5 text-green-500" />}
+                    </div>
+                    {draft.trim() && (hasMath(draft) || !isFocused) && (
+                        <div className="flex items-center gap-1.5 text-xs text-slate-600 bg-slate-50 border border-slate-200/80 rounded px-2.5 py-1">
+                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Preview:</span>
+                            <div className="font-sans text-slate-800">
+                                <LaTeXRenderer content={draft} inline />
+                            </div>
+                        </div>
+                    )}
                 </div>
             </td>
             <td className="px-4 py-3">

@@ -14,7 +14,8 @@ import {
   Upload,
   RefreshCw,
   FileText,
-  Brain
+  Brain,
+  ArrowRight
 } from 'lucide-react';
 import { useApi } from '../hooks/useApi';
 

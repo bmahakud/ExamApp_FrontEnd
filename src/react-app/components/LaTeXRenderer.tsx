@@ -1,133 +1,90 @@
 import React from 'react';
 import 'katex/dist/katex.min.css';
-import { InlineMath, BlockMath } from 'react-katex';
+import katex from 'katex';
 
 interface LaTeXRendererProps {
   content: string;
   className?: string;
+  inline?: boolean;
 }
 
-// Helper function to detect and render image URLs in text
-function renderTextWithImages(text: string, key: number) {
-  // Regex to detect image URLs (common image hosting services and extensions)
-  const imageUrlRegex = /(https?:\/\/[^\s]+\.(?:jpg|jpeg|png|gif|svg|webp|bmp)(?:\?[^\s]*)?)/gi;
+// Regex to check if a string is purely a URL
+const BARE_URL_REGEX = /^https?:\/\/\S+$/i;
 
-  // Also match mathpix CDN URLs and other common image URLs
-  const urlRegex = /(https?:\/\/(?:cdn\.mathpix\.com|i\.imgur\.com|media\.geeksforgeeks\.org)[^\s]+)/gi;
+// Regex to detect image URLs in running text
+const IMAGE_URL_REGEX = /(https?:\/\/[^\s<>"']+\.(?:jpg|jpeg|png|gif|svg|webp|bmp)(?:\?[^\s<>"']*)?|https?:\/\/(?:cdn\.mathpix\.com|i\.imgur\.com|media\.geeksforgeeks\.org)[^\s<>"']*)/gi;
 
-  const parts: Array<{ type: 'text' | 'image'; content: string }> = [];
-  let lastIndex = 0;
-
-  // Combine both regex patterns
-  const combinedRegex = new RegExp(
-    `(${imageUrlRegex.source}|${urlRegex.source})`,
-    'gi'
-  );
-
-  let match;
-  const tempText = text;
-  const matches: Array<{ index: number; url: string }> = [];
-
-  // Find all image URLs
-  combinedRegex.lastIndex = 0;
-  while ((match = combinedRegex.exec(tempText)) !== null) {
-    matches.push({ index: match.index, url: match[0] });
-  }
-
-  // Build parts array
-  matches.forEach((m) => {
-    // Add text before this image
-    if (m.index > lastIndex) {
-      parts.push({ type: 'text', content: tempText.substring(lastIndex, m.index) });
-    }
-    // Add the image
-    parts.push({ type: 'image', content: m.url });
-    lastIndex = m.index + m.url.length;
-  });
-
-  // Add remaining text
-  if (lastIndex < tempText.length) {
-    parts.push({ type: 'text', content: tempText.substring(lastIndex) });
-  }
-
-  // If no images found, just return text
-  if (parts.length === 0) {
+function renderMathSpan(math: string, displayMode: boolean, key: string | number) {
+  try {
+    const html = katex.renderToString(math, {
+      displayMode,
+      throwOnError: false,
+      strict: false,
+    });
     return (
-      <span key={key} style={{ whiteSpace: 'pre-wrap' }}>
-        {text}
-      </span>
+      <span
+        key={key}
+        className={displayMode ? 'block my-2 overflow-x-auto text-center' : 'inline-block mx-0.5 align-middle'}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  } catch {
+    const delimiter = displayMode ? '$$' : '$';
+    return (
+      <code key={key} className="text-xs text-amber-700 bg-amber-50 px-1 py-0.5 rounded">
+        {delimiter}{math}{delimiter}
+      </code>
     );
   }
+}
 
-  // Render text and images
+// Render image with fallback link on error
+function renderImageTag(url: string, key: string | number) {
   return (
-    <span key={key} style={{ whiteSpace: 'pre-wrap' }}>
-      {parts.map((part, idx) => {
-        if (part.type === 'image') {
-          return (
-            <img
-              key={idx}
-              src={part.content}
-              alt="Question image"
-              className="max-w-full h-auto my-2 rounded-lg border border-slate-200 dark:border-slate-700"
-              style={{ maxHeight: '400px', display: 'block' }}
-              onError={(e) => {
-                // Fallback: show URL if image fails to load
-                const target = e.target as HTMLImageElement;
-                target.style.display = 'none';
-                const link = document.createElement('a');
-                link.href = part.content;
-                link.textContent = part.content;
-                link.className = 'text-blue-600 underline';
-                link.target = '_blank';
-                target.parentNode?.insertBefore(link, target.nextSibling);
-              }}
-            />
-          );
-        } else {
-          return <span key={idx}>{part.content}</span>;
-        }
-      })}
-    </span>
+    <img
+      key={key}
+      src={url}
+      alt="Diagram"
+      loading="lazy"
+      className="max-w-full h-auto max-h-72 my-2 rounded-lg border border-slate-200 object-contain block shadow-sm bg-white"
+      onError={(e) => {
+        const target = e.target as HTMLImageElement;
+        target.style.display = 'none';
+        const link = document.createElement('a');
+        link.href = url;
+        link.textContent = '[Image link: ' + url + ']';
+        link.className = 'text-blue-600 underline text-xs break-all';
+        link.target = '_blank';
+        link.rel = 'noreferrer';
+        target.parentNode?.insertBefore(link, target.nextSibling);
+      }}
+    />
   );
 }
 
-export default function LaTeXRenderer({ content, className = '' }: LaTeXRendererProps) {
-  // Handle undefined or null content
-  if (!content) {
-    return <div className={className}></div>;
-  }
+// Render inline text segment with embedded image URLs and math delimiters
+function renderTextSegmentWithMath(text: string, baseKey: string | number) {
+  if (!text) return null;
 
-  // Split content by LaTeX delimiters
-  // Use multiline matching and better handling for block vs inline math
-  // Match $$...$$ (block math) first, then $...$ (inline math)
-  // The (?s) flag makes . match newlines
+  // Find all $$...$$ (block) and $...$ (inline)
   const blockMathRegex = /\$\$([\s\S]*?)\$\$/g;
-  const inlineMathRegex = /\$([^$\n]+?)\$/g;
+  const inlineMathRegex = /\$((?:\\\$|[^$])+?)\$/g;
 
-  const parts: Array<{ type: 'block' | 'inline' | 'text'; content: string; index: number }> = [];
-  let lastIndex = 0;
-  let partIndex = 0;
-
-  // First, find all block math ($$...$$)
   const blockMatches: Array<{ start: number; end: number; content: string }> = [];
-  let match;
+  let match: RegExpExecArray | null;
 
-  // Reset regex
   blockMathRegex.lastIndex = 0;
-  while ((match = blockMathRegex.exec(content)) !== null) {
+  while ((match = blockMathRegex.exec(text)) !== null) {
     blockMatches.push({
       start: match.index,
       end: match.index + match[0].length,
-      content: match[1], // Content without $$
+      content: match[1],
     });
   }
 
-  // Then find inline math, but skip if it's inside block math
   const inlineMatches: Array<{ start: number; end: number; content: string }> = [];
   inlineMathRegex.lastIndex = 0;
-  while ((match = inlineMathRegex.exec(content)) !== null) {
-    // Check if this inline math is inside a block math
+  while ((match = inlineMathRegex.exec(text)) !== null) {
     const isInsideBlock = blockMatches.some(
       bm => match!.index >= bm.start && match!.index < bm.end
     );
@@ -135,107 +92,115 @@ export default function LaTeXRenderer({ content, className = '' }: LaTeXRenderer
       inlineMatches.push({
         start: match.index,
         end: match.index + match[0].length,
-        content: match[1], // Content without $
+        content: match[1],
       });
     }
   }
 
-  // Combine and sort all matches
   const allMatches = [
     ...blockMatches.map(m => ({ ...m, type: 'block' as const })),
     ...inlineMatches.map(m => ({ ...m, type: 'inline' as const })),
   ].sort((a, b) => a.start - b.start);
 
-  // Build parts array
-  allMatches.forEach(match => {
-    // Add text before this match
-    if (match.start > lastIndex) {
-      const text = content.substring(lastIndex, match.start);
-      if (text) {
-        parts.push({ type: 'text', content: text, index: partIndex++ });
+  const elements: React.ReactNode[] = [];
+  let lastIdx = 0;
+
+  allMatches.forEach((m, idx) => {
+    if (m.start > lastIdx) {
+      const rawText = text.substring(lastIdx, m.start);
+      if (rawText) {
+        elements.push(renderTextWithEmbeddedImages(rawText, `${baseKey}-text-${idx}`));
       }
     }
 
-    // Add the math match
-    parts.push({
-      type: match.type,
-      content: match.content,
-      index: partIndex++
-    });
-
-    lastIndex = match.end;
+    elements.push(renderMathSpan(m.content, m.type === 'block', `${baseKey}-math-${idx}`));
+    lastIdx = m.end;
   });
 
-  // Add remaining text
-  if (lastIndex < content.length) {
-    const text = content.substring(lastIndex);
-    if (text) {
-      parts.push({ type: 'text', content: text, index: partIndex++ });
+  if (lastIdx < text.length) {
+    const trailingText = text.substring(lastIdx);
+    if (trailingText) {
+      elements.push(renderTextWithEmbeddedImages(trailingText, `${baseKey}-tail`));
     }
   }
 
-  // If no matches found, return entire content as text
-  if (parts.length === 0) {
-    parts.push({ type: 'text', content, index: 0 });
+  return elements.length > 0 ? elements : text;
+}
+
+// Render plain text chunk that might contain mid-line image URLs
+function renderTextWithEmbeddedImages(text: string, baseKey: string | number) {
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  IMAGE_URL_REGEX.lastIndex = 0;
+  let count = 0;
+  while ((match = IMAGE_URL_REGEX.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+    parts.push(renderImageTag(match[0], `${baseKey}-img-${count++}`));
+    lastIndex = match.index + match[0].length;
   }
 
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
+  return <React.Fragment key={baseKey}>{parts}</React.Fragment>;
+}
+
+export default function LaTeXRenderer({ content, className = '', inline = false }: LaTeXRendererProps) {
+  if (!content) {
+    return <span className={className}></span>;
+  }
+
+  const trimmed = typeof content === 'string' ? content.trim() : String(content);
+
+  // 1. Bare URL: render as image directly
+  if (BARE_URL_REGEX.test(trimmed)) {
+    return (
+      <div className={className}>
+        {renderImageTag(trimmed, 'bare-img')}
+      </div>
+    );
+  }
+
+  // 2. If inline mode requested (e.g. within tight button/badge), render single inline segment
+  if (inline) {
+    return (
+      <span className={className}>
+        {renderTextSegmentWithMath(trimmed, 'inline')}
+      </span>
+    );
+  }
+
+  // 3. Multiline question stem / paragraph with potential diagram URLs on separate lines
+  const lines = trimmed.split(/\r?\n/);
+
   return (
-    <div className={className}>
-      {parts.map((part) => {
-        if (part.type === 'block') {
-          try {
-            return <BlockMath key={part.index} math={part.content} />;
-          } catch {
-            // If rendering fails, show as code
-            return <code key={part.index} className="text-xs">$${part.content}$$</code>;
-          }
-        } else if (part.type === 'inline') {
-          // Check if content contains block-level LaTeX environments
-          // These should be rendered as block math even if wrapped in single $
-          const blockLevelEnvs = [
-            '\\begin{array}',
-            '\\begin{matrix}',
-            '\\begin{vmatrix}',
-            '\\begin{pmatrix}',
-            '\\begin{bmatrix}',
-            '\\begin{Vmatrix}',
-            '\\begin{cases}',
-            '\\begin{aligned}',
-            '\\begin{align}',
-            '\\begin{alignat}',
-            '\\begin{eqnarray}',
-            '\\begin{gather}',
-            '\\begin{multline}',
-            '\\begin{split}',
-            '\\begin{equation}',
-          ];
+    <div className={`space-y-1.5 ${className}`}>
+      {lines.map((line, lineIdx) => {
+        const lineTrimmed = line.trim();
 
-          const containsBlockEnv = blockLevelEnvs.some(env =>
-            part.content.includes(env)
-          );
-
-          // Also check if it's multiline (likely block math)
-          const isMultiline = part.content.includes('\\\\') || part.content.includes('\n');
-
-          if (containsBlockEnv || isMultiline) {
-            // Render as block math instead
-            try {
-              return <BlockMath key={part.index} math={part.content} />;
-            } catch {
-              return <code key={part.index} className="text-xs">${part.content}$</code>;
-            }
-          }
-
-          try {
-            return <InlineMath key={part.index} math={part.content} />;
-          } catch {
-            // If rendering fails, show as code
-            return <code key={part.index} className="text-xs">${part.content}$</code>;
-          }
-        } else {
-          // Regular text - check for image URLs and render them
-          return renderTextWithImages(part.content, part.index);
+        if (!lineTrimmed) {
+          return <div key={lineIdx} className="h-2" />;
         }
+
+        // Bare URL on its own line (e.g. diagram between text paragraphs)
+        if (BARE_URL_REGEX.test(lineTrimmed)) {
+          return (
+            <div key={lineIdx} className="my-3">
+              {renderImageTag(lineTrimmed, `line-img-${lineIdx}`)}
+            </div>
+          );
+        }
+
+        return (
+          <div key={lineIdx} className="leading-relaxed whitespace-pre-wrap break-words">
+            {renderTextSegmentWithMath(line, `line-${lineIdx}`)}
+          </div>
+        );
       })}
     </div>
   );
@@ -251,4 +216,3 @@ export function extractLaTeX(content: string): string[] {
 export function hasLaTeX(content: string): boolean {
   return /\$\$.*?\$\$|\$.*?\$/.test(content);
 }
-
